@@ -2,6 +2,7 @@ import numpy as np
 
 big_M = 99999
 
+
 class Agv:
     '''
     A class for agv in the warehouse.
@@ -29,6 +30,7 @@ class Agv:
     :arg dest (tuple): The location of current destination which is generally the first argument of path.
     :arg occupied_time (int): The pre-occupied time of an action that cannot be finished in 1 unit of time.
     '''
+
     def __init__(self, x, y, index, n=1):
         self.index = index
         self.max_velocity, self.acceleration, self.deceleration = 1, 0.5, 0.5
@@ -80,7 +82,7 @@ class Agv:
                 return
 
             self.state = 'moving'
-            _ , self.velocity, dist_move = self.move(
+            _, self.velocity, dist_move = self.move(
                 self.velocity, abs(self.loc[0] - self.dest[0]) + abs(self.loc[1] - self.dest[1]))
             self.loc = (self.loc[0] + self.heading[0] * dist_move, self.loc[1] + self.heading[1] * dist_move)
 
@@ -141,7 +143,7 @@ class Agv:
             t_acc = (self.max_velocity - velocity) / self.acceleration
             t_dec = self.max_velocity / self.deceleration
             t_const = (dist_target - (velocity + self.max_velocity) / 2 * t_acc - self.max_velocity / 2 * t_dec) \
-                          / self.max_velocity
+                      / self.max_velocity
             t_total = t_acc + t_dec + t_const
 
             if t_acc > 1:  # end within acceleration period
@@ -153,15 +155,15 @@ class Agv:
             else:  # end within deceleration speed period
                 velocity_end = self.max_velocity - self.deceleration * (1 - t_acc - t_const)
                 dist_move = (velocity + self.max_velocity) / 2 * t_acc + self.max_velocity * t_const + \
-                                (self.max_velocity + velocity_end) / 2 * (1 - t_acc - t_const)
+                            (self.max_velocity + velocity_end) / 2 * (1 - t_acc - t_const)
         return t_total, velocity_end, dist_move
 
     def find_feasible_interval(self, l_grid, ind):
         tmp = np.where(l_grid[:ind] != 0)[0]
-        ind_min = (tmp[-1] + 1) if len(tmp)>0 else 0
+        ind_min = (tmp[-1] + 1) if len(tmp) > 0 else 0
         tmp = np.where(l_grid[ind:] != 0)[0]
-        ind_max = (ind + tmp[0] - 1) if len(tmp)>0 else (len(l_grid) - 1)
-        return ind_min, ind_max
+        ind_max = (ind + tmp[0] - 1) if len(tmp) > 0 else (len(l_grid) - 1)
+        return ind - ind_min, ind_max - ind
 
     # TODO: find the shortest path between two nodes while the velocity at origin/destination should be 0
     #       1. avoid going through stations
@@ -176,11 +178,14 @@ class Agv:
             for j in range(weight):
                 if grid[i, j] == 0:
                     dist_j_1, dist_j_2 = self.find_feasible_interval(grid[i, :], j)
-                    dist[i, dist_j_1:j] = self.dist_straight[1:j-dist_j_1+1][::-1]
-                    dist[i, j+1:dist_j_2] = self.dist_straight[1:j-dist_j_1+1]
+                    dist[i, j - dist_j_1:j] = self.dist_straight[1:dist_j_1 + 1][::-1]
+                    dist[i, j:j + dist_j_2 + 1] = self.dist_straight[:dist_j_1 + 1]
                     dist_i_1, dist_i_2 = self.find_feasible_interval(grid[:, j], i)
-                    dist[dist_i_1:i, j] = self.dist_straight[1:i-dist_i_1+1][::-1]
-                    dist[i+1:dist_i_2, j] = self.dist_straight[1:i-dist_i_1+1]
+                    dist[i - dist_i_1:i, j] = self.dist_straight[1:dist_i_1 + 1][::-1]
+                    dist[i:i + dist_i_2 + 1, j] = self.dist_straight[dist_i_1 + 1]
+                else:
+                    dist[i, i] = 0
+
 
 class Package:
     def __init__(self, orig, dest, index):
@@ -188,7 +193,7 @@ class Package:
         self.orig, self.dest = orig, dest
         self.index = index
 
-        self.state = 'waiting' # ['waiting', 'loading', 'completed']
+        self.state = 'waiting'  # ['waiting', 'loading', 'completed']
 
 
 class Workstation:
@@ -207,6 +212,7 @@ class Workstation:
     :arg queue (list[Package]): List of packages that are ready for pick up, order according to agvs.
     :arg occupied_time (int): The remaining time of loading the first package in the queue.
     '''
+
     def __init__(self, x, y, index):
         # position x and y
         self.index = index
@@ -225,7 +231,7 @@ class Workstation:
         :return: current agv waiting time
         '''
         if self.queue:
-            self.occupied_time = self.process_time + 1 # next step of ws is called after agv
+            self.occupied_time = self.process_time + 1  # next step of ws is called after agv
         self.queue.append(package)
         self.packages.remove(package)
 
@@ -243,6 +249,7 @@ class Workstation:
         else:
             self.occupied_time = self.process_time
             self.queue.pop(0)
+
 
 class Dropstation:
     def __init__(self, x, y, index):
