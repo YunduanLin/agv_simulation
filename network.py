@@ -1,4 +1,4 @@
-from numpy import np
+import numpy as np
 from agent import *
 
 class Warehousemap:
@@ -10,9 +10,10 @@ class Warehousemap:
 
         self.t = 0
 
-        self.generate_shortest_path()
+        for agv in self.list_agv:
+            agv.generate_shortest_path(self.grid)
 
-    def add_agent(self, x, y, node_type, dest=None, n=None):
+    def add_agent(self, x, y, node_type, n=None):
         if node_type == 'workstation':
             # add workstation
             node_ws = Workstation(x, y, self.cnt_ws+1)
@@ -42,10 +43,3 @@ class Warehousemap:
         for ws in self.list_ws:
             ws.next_step()
         return
-
-    # TODO: find the shortest path between two nodes while the velocity at origin/destination should be 0
-    #       1. avoid through stations
-    #       2. find path
-    def generate_shortest_path(self):
-
-        self.dist = np.ones(self.cnt_ws + self.cnt_ds, self.cnt_ws + self.cnt_ds)

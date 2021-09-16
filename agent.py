@@ -1,5 +1,7 @@
 import numpy as np
 
+big_M = 99999
+
 class Agv:
     '''
     A class for agv in the warehouse.
@@ -153,6 +155,32 @@ class Agv:
                 dist_move = (velocity + self.max_velocity) / 2 * t_acc + self.max_velocity * t_const + \
                                 (self.max_velocity + velocity_end) / 2 * (1 - t_acc - t_const)
         return t_total, velocity_end, dist_move
+
+    def find_feasible_interval(self, l_grid, ind):
+        tmp = np.where(l_grid[:ind] != 0)[0]
+        ind_min = (tmp[-1] + 1) if len(tmp)>0 else 0
+        tmp = np.where(l_grid[ind:] != 0)[0]
+        ind_max = (ind + tmp[0] - 1) if len(tmp)>0 else (len(l_grid) - 1)
+        return ind_min, ind_max
+
+    # TODO: find the shortest path between two nodes while the velocity at origin/destination should be 0
+    #       1. avoid going through stations
+    #       2. find path
+    def generate_shortest_path(self, grid):
+        height, weight = grid.shape
+        dist = big_M * np.ones((height * weight, height * weight))
+        self.dist_straight = [self.move(0, dist)[0] for dist in range(max(height, weight))]
+
+        # initialize straight line time for each pair
+        for i in range(height):
+            for j in range(weight):
+                if grid[i, j] == 0:
+                    dist_j_1, dist_j_2 = self.find_feasible_interval(grid[i, :], j)
+                    dist[i, dist_j_1:j] = self.dist_straight[1:j-dist_j_1+1][::-1]
+                    dist[i, j+1:dist_j_2] = self.dist_straight[1:j-dist_j_1+1]
+                    dist_i_1, dist_i_2 = self.find_feasible_interval(grid[:, j], i)
+                    dist[dist_i_1:i, j] = self.dist_straight[1:i-dist_i_1+1][::-1]
+                    dist[i+1:dist_i_2, j] = self.dist_straight[1:i-dist_i_1+1]
 
 class Package:
     def __init__(self, orig, dest, index):
