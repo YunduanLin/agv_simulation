@@ -44,10 +44,6 @@ class Agv:
         self.dest = ()
         self.occupied_time = 0
 
-    def way_finding_protocol(self):
-        # TODO: shortest path
-        return
-
     def next_step(self):
         '''
         A function describes the next-step action of agv.
@@ -82,7 +78,8 @@ class Agv:
                 return
 
             self.state = 'moving'
-            self.velocity, dist_move = self.move(abs(self.loc[0] - self.dest[0]) + abs(self.loc[1] - self.dest[1]))
+            _ , self.velocity, dist_move = self.move(
+                self.velocity, abs(self.loc[0] - self.dest[0]) + abs(self.loc[1] - self.dest[1]))
             self.loc = (self.loc[0] + self.heading[0] * dist_move, self.loc[1] + self.heading[1] * dist_move)
 
             # if agv arrives at the target destination, point to the next destination
@@ -108,62 +105,54 @@ class Agv:
 
         return
 
-    def move(self, dist_target):
-        '''
-        A function to calculate the moving distance of agv
-        :param dist_target (float): The distance between real-time location and target point
-        :return: velocity (float): The velocity of agv at the end of this unit of time
-                 dist_move (float): The moving distance during this unit of time
-        '''
+    def move(self, velocity, dist_target):
+        t_total = 0
         velocity_end, dist_move = 0, 0
 
-        # the least distance that agv needs to go before decelerating to 0
-        dist_min = self.velocity / 2 * self.velocity / self.deceleration
-        # if the least distance is greater than target distance, it's impossible to stop at the target grid
-        assert dist_min <= dist_target
-
         # the least distance that agv needs to go before decelerating to 0 if it first accelerates to max_velocity
-        dist_max_velocity_min = (self.max_velocity + self.velocity) / 2 * (
-                self.max_velocity - self.velocity) / self.acceleration \
+        dist_max_velocity_min = (self.max_velocity + velocity) / 2 * (
+                self.max_velocity - velocity) / self.acceleration \
                                 + self.max_velocity / 2 * self.max_velocity / self.deceleration
 
         # when the agv does not need to accelerate to max_velocity
         if dist_max_velocity_min > dist_target:
-            t_min = (self.max_velocity - self.velocity) / self.acceleration + self.max_velocity / self.deceleration
+            t_min = (self.max_velocity - velocity) / self.acceleration + self.max_velocity / self.deceleration
             # if the agv can arrive at the target within 1 unit of time
             if t_min <= 1:
                 dist_move = dist_target
+                t_total = 1
             else:
                 # find the max velocity: (v+x)(x-v)/2a + x^2/2d = dist_target
-                velocity_u = (dist_target + self.velocity ** 2 / 2 / self.acceleration) / (
+                velocity_u = (dist_target + velocity ** 2 / 2 / self.acceleration) / (
                         1 / 2 / self.acceleration + 1 / 2 / self.deceleration)
-                t_acc = (velocity_u - self.velocity) / self.acceleration
-                if t_acc > 1: # end within acceleration period
-                    velocity_end = self.velocity + self.acceleration * 1
-                    dist_move = (self.velocity + velocity_u) / 2 * 1
-                else: # end within deceleration period
+                t_acc = (velocity_u - velocity) / self.acceleration
+                t_total = t_acc + velocity_u / self.deceleration
+
+                if t_acc > 1:  # end within acceleration period
+                    velocity_end = velocity + self.acceleration * 1
+                    dist_move = (velocity + velocity_u) / 2 * 1
+                else:  # end within deceleration period
                     velocity_end = velocity_u - self.deceleration * (1 - t_acc)
-                    dist_move = (self.velocity + velocity_u) / 2 * t_acc + (velocity_u + velocity_end) / 2 * (1 - t_acc)
-
-        # when the agv can cruise at the max_velocity
+                    dist_move = (velocity + velocity_u) / 2 * t_acc + (velocity_u + velocity_end) / 2 * (1 - t_acc)
+                # when the agv can cruise at the max_velocity
         else:
-            t_acc = (self.max_velocity - self.velocity) / self.acceleration
+            t_acc = (self.max_velocity - velocity) / self.acceleration
             t_dec = self.max_velocity / self.deceleration
-            t_const = (dist_target - (self.velocity + self.max_velocity) / 2 * t_acc - self.max_velocity / 2 * t_dec) \
-                      / self.max_velocity
+            t_const = (dist_target - (velocity + self.max_velocity) / 2 * t_acc - self.max_velocity / 2 * t_dec) \
+                          / self.max_velocity
+            t_total = t_acc + t_dec + t_const
 
-            if t_acc > 1: # end within acceleration period
-                velocity_end = self.velocity + self.acceleration * 1
-                dist_move = (self.velocity + velocity_end) / 2 * 1
-            elif t_acc + t_const > 1: # end within constant speed period
+            if t_acc > 1:  # end within acceleration period
+                velocity_end = velocity + self.acceleration * 1
+                dist_move = (velocity + velocity_end) / 2 * 1
+            elif t_acc + t_const > 1:  # end within constant speed period
                 velocity_end = self.max_velocity
-                dist_move = (self.velocity + self.max_velocity) / 2 * t_acc + self.max_velocity * (1 - t_acc)
-            else: # end within deceleration speed period
+                dist_move = (velocity + self.max_velocity) / 2 * t_acc + self.max_velocity * (1 - t_acc)
+            else:  # end within deceleration speed period
                 velocity_end = self.max_velocity - self.deceleration * (1 - t_acc - t_const)
-                dist_move = (self.velocity + self.max_velocity) / 2 * t_acc + self.max_velocity * t_const + \
-                            (self.max_velocity + velocity_end) / 2 * (1 - t_acc - t_const)
-
-        return velocity_end, dist_move
+                dist_move = (velocity + self.max_velocity) / 2 * t_acc + self.max_velocity * t_const + \
+                                (self.max_velocity + velocity_end) / 2 * (1 - t_acc - t_const)
+        return t_total, velocity_end, dist_move
 
 class Package:
     def __init__(self, orig, dest, index):
@@ -228,8 +217,7 @@ class Workstation:
             self.queue.pop(0)
 
 class Dropstation:
-    def __init__(self, x, y, index, dest):
+    def __init__(self, x, y, index):
         # position x and y
         self.loc = (x, y)
         self.index = index
-        self.dest = dest
