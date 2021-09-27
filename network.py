@@ -2,13 +2,16 @@ import numpy as np
 from agent import *
 
 class Warehousemap:
-    def __init__(self, width, height):
-        self.width, self.height = width, height
-        self.grid = np.zeros(self.height, self.width)
+    def __init__(self, height, width, agents):
+        self.height, self.width = height, width
+        self.grid = np.zeros((self.height, self.width))
         self.list_ws, self.list_ds, self.list_agv = [], [], [] # Collections of workstations, dropstations and agvs
         self.cnt_ws, self.cnt_ds, self.cnt_agv = 0, 0, 0
 
         self.t = 0
+
+        for agent in agents:
+            self.add_agent(**agent)
 
         for agv in self.list_agv:
             agv.generate_shortest_path(self.grid)
