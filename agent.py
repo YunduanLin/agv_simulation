@@ -173,7 +173,9 @@ class Agv:
     #       2. find path
     def generate_shortest_path(self, grid):
         self.height, self.width = grid.shape
+        self.cnt_grid = self.height * self.width
         dist = big_M * np.ones((self.height * self.width, self.height * self.width))
+        next_grid = np.repeat([np.arange(0, self.cnt_grid, 1)], self.cnt_grid, axis=0)
         self.dist_straight = [self.move(0, dist)[0] for dist in range(max(self.height, self.width))]
 
         # initialize straight line time for each pair
@@ -190,6 +192,14 @@ class Agv:
                 else:
                     dist[i, i] = 0
 
+        for k in range(self.cnt_grid):
+            for i in range(self.cnt_grid):
+                for j in range(self.cnt_grid):
+                    if dist[i,k]+dist[k,j]+self.rotate_time < dist[i,j]:
+                        dist[i,j] = dist[i,k] + dist[k,j] + self.rotate_time
+                        next_grid[i,j] = k
+
+        self.dist, self.next_grid = dist, next_grid
 
 class Package:
     def __init__(self, orig, dest, index):
