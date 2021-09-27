@@ -2,7 +2,6 @@ import numpy as np
 
 big_M = 99999
 
-
 class Agv:
     '''
     A class for agv in the warehouse.
@@ -127,8 +126,8 @@ class Agv:
                 t_total = 1
             else:
                 # find the max velocity: (v+x)(x-v)/2a + x^2/2d = dist_target
-                velocity_u = (dist_target + velocity ** 2 / 2 / self.acceleration) / (
-                        1 / 2 / self.acceleration + 1 / 2 / self.deceleration)
+                velocity_u = np.sqrt((dist_target + velocity ** 2 / 2 / self.acceleration) / (
+                        1 / 2 / self.acceleration + 1 / 2 / self.deceleration))
                 t_acc = (velocity_u - velocity) / self.acceleration
                 t_total = t_acc + velocity_u / self.deceleration
 
@@ -156,7 +155,7 @@ class Agv:
                 velocity_end = self.max_velocity - self.deceleration * (1 - t_acc - t_const)
                 dist_move = (velocity + self.max_velocity) / 2 * t_acc + self.max_velocity * t_const + \
                             (self.max_velocity + velocity_end) / 2 * (1 - t_acc - t_const)
-        return t_total, velocity_end, dist_move
+        return np.ceil(t_total), velocity_end, dist_move
 
     def find_feasible_interval(self, l_grid, cord):
         tmp = np.where(l_grid[:cord] != 0)[0]
@@ -184,11 +183,11 @@ class Agv:
                 if grid[i, j] == 0:
                     ind = self.convert_to_ind(i, j)
                     j_min, j_max = self.find_feasible_interval(grid[i, :], j)
-                    dist[ind, self.convert_to_ind(i,j_min):self.convert_to_ind(i,j)] = self.dist_straight[1:j - j_min][::-1]
+                    dist[ind, self.convert_to_ind(i,j_min):self.convert_to_ind(i,j + 1)] = self.dist_straight[:j - j_min + 1][::-1]
                     dist[ind, self.convert_to_ind(i,j):self.convert_to_ind(i,j_max + 1)] = self.dist_straight[:j_max - j + 1]
                     i_min, i_max = self.find_feasible_interval(grid[:, j], i)
-                    dist[ind, self.convert_to_ind(i_min,j):self.convert_to_ind(i,j):self.width] = self.dist_straight[1:i - i_min][::-1]
-                    dist[ind, self.convert_to_ind(i,j):self.convert_to_ind(i_max+1,j):self.width] = self.dist_straight[:i_max - i + 1]
+                    dist[ind, self.convert_to_ind(i_min,j):self.convert_to_ind(i + 1,j):self.width] = self.dist_straight[:i - i_min + 1][::-1]
+                    dist[ind, self.convert_to_ind(i,j):self.convert_to_ind(i_max + 1,j):self.width] = self.dist_straight[:i_max - i + 1]
                 else:
                     dist[i, i] = 0
 
