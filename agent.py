@@ -158,31 +158,35 @@ class Agv:
                             (self.max_velocity + velocity_end) / 2 * (1 - t_acc - t_const)
         return t_total, velocity_end, dist_move
 
-    def find_feasible_interval(self, l_grid, ind):
-        tmp = np.where(l_grid[:ind] != 0)[0]
-        ind_min = (tmp[-1] + 1) if len(tmp) > 0 else 0
-        tmp = np.where(l_grid[ind:] != 0)[0]
-        ind_max = (ind + tmp[0] - 1) if len(tmp) > 0 else (len(l_grid) - 1)
-        return ind - ind_min, ind_max - ind
+    def find_feasible_interval(self, l_grid, cord):
+        tmp = np.where(l_grid[:cord] != 0)[0]
+        cord_min = (tmp[-1] + 1) if len(tmp) > 0 else 0
+        tmp = np.where(l_grid[cord:] != 0)[0]
+        cord_max = (cord + tmp[0] - 1) if len(tmp) > 0 else (len(l_grid) - 1)
+        return cord_min, cord_max
+
+    def convert_to_ind(self, i, j):
+        return i * self.width + j
 
     # TODO: find the shortest path between two nodes while the velocity at origin/destination should be 0
     #       1. avoid going through stations
     #       2. find path
     def generate_shortest_path(self, grid):
-        height, weight = grid.shape
-        dist = big_M * np.ones((height * weight, height * weight))
-        self.dist_straight = [self.move(0, dist)[0] for dist in range(max(height, weight))]
+        self.height, self.width = grid.shape
+        dist = big_M * np.ones((self.height * self.width, self.height * self.width))
+        self.dist_straight = [self.move(0, dist)[0] for dist in range(max(self.height, self.width))]
 
         # initialize straight line time for each pair
-        for i in range(height):
-            for j in range(weight):
+        for i in range(self.height):
+            for j in range(self.width):
                 if grid[i, j] == 0:
-                    dist_j_1, dist_j_2 = self.find_feasible_interval(grid[i, :], j)
-                    dist[i, j - dist_j_1:j] = self.dist_straight[1:dist_j_1 + 1][::-1]
-                    dist[i, j:j + dist_j_2 + 1] = self.dist_straight[:dist_j_1 + 1]
-                    dist_i_1, dist_i_2 = self.find_feasible_interval(grid[:, j], i)
-                    dist[i - dist_i_1:i, j] = self.dist_straight[1:dist_i_1 + 1][::-1]
-                    dist[i:i + dist_i_2 + 1, j] = self.dist_straight[dist_i_1 + 1]
+                    ind = self.convert_to_ind(i, j)
+                    j_min, j_max = self.find_feasible_interval(grid[i, :], j)
+                    dist[ind, self.convert_to_ind(i,j_min):self.convert_to_ind(i,j)] = self.dist_straight[1:j - j_min][::-1]
+                    dist[ind, self.convert_to_ind(i,j):self.convert_to_ind(i,j_max + 1)] = self.dist_straight[:j_max - j + 1]
+                    i_min, i_max = self.find_feasible_interval(grid[:, j], i)
+                    dist[ind, self.convert_to_ind(i_min,j):self.convert_to_ind(i,j):self.width] = self.dist_straight[1:i - i_min][::-1]
+                    dist[ind, self.convert_to_ind(i,j):self.convert_to_ind(i_max+1,j):self.width] = self.dist_straight[:i_max - i + 1]
                 else:
                     dist[i, i] = 0
 
