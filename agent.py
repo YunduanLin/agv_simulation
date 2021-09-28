@@ -170,8 +170,11 @@ class Agv:
         cord_max = (cord + tmp[0] - 1) if len(tmp) > 0 else (len(l_grid) - 1)
         return cord_min, cord_max
 
-    def convert_to_ind(self, i, j):
+    def to_ind(self, i, j):
         return i * self.width + j
+
+    def to_cord(self, ind):
+        return (ind / self.width, ind % self.width)
 
     def generate_shortest_path(self, grid):
         '''
@@ -189,15 +192,15 @@ class Agv:
         for i in range(self.height):
             for j in range(self.width):
                 if grid[i, j] == 0: # the grid is not a station
-                    ind = self.convert_to_ind(i, j)
+                    ind = self.to_ind(i, j)
                     # horizontal
                     j_min, j_max = self.find_feasible_interval(grid[i, :], j)
-                    dist[ind, self.convert_to_ind(i,j_min):self.convert_to_ind(i,j + 1)] = self.dist_straight[:j - j_min + 1][::-1]
-                    dist[ind, self.convert_to_ind(i,j):self.convert_to_ind(i,j_max + 1)] = self.dist_straight[:j_max - j + 1]
+                    dist[ind, self.to_ind(i,j_min):self.to_ind(i,j + 1)] = self.dist_straight[:j - j_min + 1][::-1]
+                    dist[ind, self.to_ind(i,j):self.to_ind(i,j_max + 1)] = self.dist_straight[:j_max - j + 1]
                     # vertical
                     i_min, i_max = self.find_feasible_interval(grid[:, j], i)
-                    dist[ind, self.convert_to_ind(i_min,j):self.convert_to_ind(i + 1,j):self.width] = self.dist_straight[:i - i_min + 1][::-1]
-                    dist[ind, self.convert_to_ind(i,j):self.convert_to_ind(i_max + 1,j):self.width] = self.dist_straight[:i_max - i + 1]
+                    dist[ind, self.to_ind(i_min,j):self.to_ind(i + 1,j):self.width] = self.dist_straight[:i - i_min + 1][::-1]
+                    dist[ind, self.to_ind(i,j):self.to_ind(i_max + 1,j):self.width] = self.dist_straight[:i_max - i + 1]
                 else:
                     dist[i, i] = 0
 
@@ -210,6 +213,19 @@ class Agv:
                         next_grid[i,j] = k
 
         self.dist, self.next_grid = dist, next_grid
+
+    def pathfinding(self, orig, dest):
+        ind_orig, ind_dest = self.to_ind(orig[0],orig[1]), self.to_ind(dest[0],dest[1])
+        l_path = [dest]
+        ind_tmp = self.next_grid[ind_orig, ind_dest]
+        while ind_tmp != ind_dest:
+            l_path = [self.to_cord(ind_tmp)] + l_path
+            ind_tmp = self.next_grid[ind_orig, ind_tmp]
+
+        l_path = [orig] + l_path
+
+        self.path = self.path + l_path
+
 
 class Package:
     def __init__(self, orig, dest, index):
