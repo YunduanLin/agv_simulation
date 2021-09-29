@@ -2,6 +2,7 @@ import numpy as np
 
 big_M = 99999
 
+
 class Agv:
     '''
     A class for agv in the warehouse.
@@ -40,7 +41,8 @@ class Agv:
         self.velocity, self.heading = 0, (0, 0)
         self.state = 'idle'
 
-        self.packages = []
+        self.loaded_packages = []
+        self.assigned_packages = []
         self.actions = []
         self.path = []
 
@@ -94,16 +96,17 @@ class Agv:
                 if self.actions:
                     action, package = self.actions[0]
                     if (action == 'loading') & (self.loc == package.orig.loc):
-                        assert package not in self.packages
+                        assert package in self.assigned_packages
                         self.occupied_time = package.orig.add_to_queue(package)
                         self.state = package.state = 'loading'
-                        self.packages.append(package)
+                        self.loaded_packages.append(package)
+                        self.assigned_packages.remove(package)
                         self.actions.pop(0)
                     elif (action == 'unloading') & (self.loc == package.dest.loc):
-                        assert package in self.packages
+                        assert package in self.loaded_packages
                         self.state, package.state = 'unloading', 'completed'
                         self.occupied_time = self.unload_time
-                        self.packages.remove(package)
+                        self.loaded_packages.remove(package)
                         self.actions.pop(0)
 
         return
@@ -170,11 +173,25 @@ class Agv:
         cord_max = (cord + tmp[0] - 1) if len(tmp) > 0 else (len(l_grid) - 1)
         return cord_min, cord_max
 
-    def to_ind(self, i, j):
-        return i * self.width + j
+    def to_ind(self, cord):
+        return cord[0] * self.width + cord[1]
 
     def to_cord(self, ind):
-        return (ind / self.width, ind % self.width)
+        return (ind // self.width, ind % self.width)
+
+    def to_surrounding(self, cord):
+        list_cord = [cord]
+        if self.grid[cord]:
+            list_cord = []
+            if (cord[0] > 0):
+                list_cord = list_cord + [(cord[0] - 1, cord[1])] if (self.grid[cord[0] - 1, cord[1]] == 0) else []
+            if (cord[1] > 0):
+                list_cord = list_cord + [(cord[0], cord[1] - 1)] if (self.grid[cord[0], cord[1] - 1] == 0) else []
+            if (cord[0] < self.height - 1):
+                list_cord = list_cord + [(cord[0] + 1, cord[1])] if (self.grid[cord[0] + 1, cord[1]] == 0) else []
+            if (cord[1] < self.width - 1):
+                list_cord = list_cord + [(cord[0], cord[1] + 1)] if (self.grid[cord[0], cord[1] + 1] == 0) else []
+        return list_cord
 
     def generate_shortest_path(self, grid):
         '''
@@ -182,6 +199,7 @@ class Agv:
         :arg grid (Array): layout of warehouse, indicating where are the stations.
         :return:
         '''
+        self.grid = grid
         self.height, self.width = grid.shape
         self.cnt_grid = self.height * self.width
         dist = big_M * np.ones((self.height * self.width, self.height * self.width))
@@ -191,16 +209,19 @@ class Agv:
         # initialize straight-line distance for each pair of grids
         for i in range(self.height):
             for j in range(self.width):
-                if grid[i, j] == 0: # the grid is not a station
-                    ind = self.to_ind(i, j)
+                if self.grid[i, j] == 0:  # the grid is not a station
+                    ind = self.to_ind((i, j))
                     # horizontal
-                    j_min, j_max = self.find_feasible_interval(grid[i, :], j)
-                    dist[ind, self.to_ind(i,j_min):self.to_ind(i,j + 1)] = self.dist_straight[:j - j_min + 1][::-1]
-                    dist[ind, self.to_ind(i,j):self.to_ind(i,j_max + 1)] = self.dist_straight[:j_max - j + 1]
+                    j_min, j_max = self.find_feasible_interval(self.grid[i, :], j)
+                    dist[ind, self.to_ind((i, j_min)):self.to_ind((i, j + 1))] = self.dist_straight[:j - j_min + 1][
+                                                                                 ::-1]
+                    dist[ind, self.to_ind((i, j)):self.to_ind((i, j_max + 1))] = self.dist_straight[:j_max - j + 1]
                     # vertical
-                    i_min, i_max = self.find_feasible_interval(grid[:, j], i)
-                    dist[ind, self.to_ind(i_min,j):self.to_ind(i + 1,j):self.width] = self.dist_straight[:i - i_min + 1][::-1]
-                    dist[ind, self.to_ind(i,j):self.to_ind(i_max + 1,j):self.width] = self.dist_straight[:i_max - i + 1]
+                    i_min, i_max = self.find_feasible_interval(self.grid[:, j], i)
+                    dist[ind, self.to_ind((i_min, j)):self.to_ind((i + 1, j)):self.width] = self.dist_straight[
+                                                                                            :i - i_min + 1][::-1]
+                    dist[ind, self.to_ind((i, j)):self.to_ind((i_max + 1, j)):self.width] = self.dist_straight[
+                                                                                            :i_max - i + 1]
                 else:
                     dist[i, i] = 0
 
@@ -208,14 +229,32 @@ class Agv:
         for k in range(self.cnt_grid):
             for i in range(self.cnt_grid):
                 for j in range(self.cnt_grid):
-                    if dist[i,k]+dist[k,j]+self.rotate_time < dist[i,j]:
-                        dist[i,j] = dist[i,k] + dist[k,j] + self.rotate_time # add rotation time at each turning
-                        next_grid[i,j] = k
+                    if dist[i, k] + dist[k, j] + self.rotate_time < dist[i, j]:
+                        dist[i, j] = dist[i, k] + dist[k, j] + self.rotate_time  # add rotation time at each turning
+                        next_grid[i, j] = next_grid[i, k]
+
+        # use the shortest distance of surrounding grids to replace the shortest path between stations.
+        for i in range(self.cnt_grid):
+            for j in range(self.cnt_grid):
+                cord_i, cord_j = self.to_cord(i), self.to_cord(j)
+                if (self.grid[cord_i] == 1) | (self.grid[cord_j] == 1):
+                    list_cord_i, list_cord_j = self.to_surrounding(cord_i), \
+                                               self.to_surrounding(cord_j)
+                    list_ind_i, list_ind_j = [self.to_ind(cord) for cord in list_cord_i], \
+                                             [self.to_ind(cord) for cord in list_cord_j]
+                    dist_pair = np.array([[dist[ind_i, ind_j] for ind_j in list_ind_j] for ind_i in list_ind_i])
+                    ind_min = np.argmin(dist_pair)
+                    ind_sur_i, ind_sur_j = list_ind_i[ind_min // len(list_ind_j)], list_ind_j[ind_min % len(list_ind_j)]
+                    if (self.grid[cord_i] == 1):
+                        next_grid[i, j] = ind_sur_i
+                    else:
+                        next_grid[i, j] = next_grid[ind_sur_i, ind_sur_j]
 
         self.dist, self.next_grid = dist, next_grid
 
     def pathfinding(self, orig, dest):
-        ind_orig, ind_dest = self.to_ind(orig[0],orig[1]), self.to_ind(dest[0],dest[1])
+        ind_orig, ind_dest = self.to_ind(orig), self.to_ind(dest)
+        # TODO: deal with first/last order
         l_path = [dest]
         ind_tmp = self.next_grid[ind_orig, ind_dest]
         while ind_tmp != ind_dest:
@@ -284,11 +323,12 @@ class Workstation:
         '''
         assert len(self.queue) <= self.buffer_capacity
 
-        if self.occupied_time > 1:
-            self.occupied_time -= 1
-        else:
-            self.occupied_time = self.process_time
-            self.queue.pop(0)
+        if self.queue:
+            if self.occupied_time > 1:
+                self.occupied_time -= 1
+            else:
+                self.occupied_time = self.process_time
+                self.queue.pop(0)
 
 
 class Dropstation:
