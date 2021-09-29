@@ -23,19 +23,19 @@ class Warehousemap:
     def add_agent(self, x, y, node_type, n=None):
         if node_type == 'workstation':
             # add workstation
-            node_ws = Workstation(x, y, self.cnt_ws+1)
+            node_ws = Workstation(x, y, self.cnt_ws)
             self.list_ws.append(node_ws)
             self.cnt_ws += 1
             self.grid[x, y] = 1
         elif node_type == 'dropstation':
             # add dropstation
-            node_ds = Dropstation(x, y, self.cnt_ds+1)
-            self.list_ws.append(node_ds)
+            node_ds = Dropstation(x, y, self.cnt_ds)
+            self.list_ds.append(node_ds)
             self.cnt_ds += 1
             self.grid[x, y] = 1
         elif node_type == 'agv':
             # add agv
-            node_agv = Agv(x, y, self.cnt_agv+1, n)
+            node_agv = Agv(x, y, self.cnt_agv, n)
             self.list_agv.append(node_agv)
             self.cnt_agv += 1
 
@@ -43,8 +43,8 @@ class Warehousemap:
         package = Package(self.list_ws[orig], self.list_ds[dest], self.cnt_p)
         self.cnt_p += 1
         self.list_ws[orig].packages.append(package)
-        if agv:
-            agv.packages.append(package)
+        if agv is not None:
+            self.list_agv[agv].assigned_packages.append(package)
 
 
     def next_step(self):
@@ -54,6 +54,11 @@ class Warehousemap:
                     package = agv.packages.pop()
                     agv.pathfinding(agv.loc, package.orig.loc)
                     agv.pathfinding(package.orig.loc, package.dest.loc)
+                    agv.actions.append(('loading', package))
+                    agv.actions.append(('unloading', package))
+                    agv.state = 'moving'
+                    agv.dest = agv.path.pop(0)
+                    agv.next_step()
             else:
                 agv.next_step()
 
