@@ -52,7 +52,7 @@ class Agv:
     def __str__(self):
         str = f"""
 Agv {self.index} real-time information:
-State: {self.state}
+State: {self.state}{f' with {self.occupied_time} time left' if self.occupied_time > 0 else ''}
 Velocity: {self.velocity}
 Location: {self.loc}
 Heading: {self.heading}
@@ -68,8 +68,6 @@ Next destination: {self.dest}
         #       2. what happened if the working station is full
         #       3. load one package at a time, extend to multiple packages
 
-        # the location of agv and the current destination should be in the same row/column
-        assert (self.dest[0] == self.loc[0]) | (self.dest[1] == self.loc[1])
         # agv is still in progress of some actions (rotating, loading, unloading)
         if self.occupied_time > 0:
             self.occupied_time -= 1
@@ -77,6 +75,9 @@ Next destination: {self.dest}
         else:
             # if heading does not align with current destination, rotate.
             if self.dest:
+                # the location of agv and the current destination should be in the same row/column
+                assert (self.dest[0] == self.loc[0]) | (self.dest[1] == self.loc[1])
+
                 heading_target = (np.sign(self.dest[0] - self.loc[0]), np.sign(self.dest[1] - self.loc[1]))
                 if heading_target != self.heading:
                     assert self.velocity == 0
@@ -104,14 +105,16 @@ Next destination: {self.dest}
                 # load/unload packages at the origin/destination
                 if self.actions:
                     action, package = self.actions[0]
-                    if (action == 'loading') & (self.loc == package.orig.loc):
+                    if (action == 'loading') & (
+                            (abs(self.loc[0] - package.orig.loc[0]) + abs(self.loc[1] - package.orig.loc[1])) == 1):
                         assert package in self.assigned_packages
                         self.occupied_time = package.orig.add_to_queue(package)
                         self.state = package.state = 'loading'
                         self.loaded_packages.append(package)
                         self.assigned_packages.remove(package)
                         self.actions.pop(0)
-                    elif (action == 'unloading') & (self.loc == package.dest.loc):
+                    elif (action == 'unloading') & (
+                            (abs(self.loc[0] - package.dest.loc[0]) + abs(self.loc[1] - package.dest.loc[1])) == 1):
                         assert package in self.loaded_packages
                         self.state, package.state = 'unloading', 'completed'
                         self.occupied_time = self.unload_time
@@ -181,7 +184,7 @@ Next destination: {self.dest}
         return cord_min, cord_max
 
     def to_ind(self, cord):
-        return cord[0] * self.width + cord[1]
+        return int(cord[0] * self.width + cord[1])
 
     def to_cord(self, ind):
         return (ind // self.width, ind % self.width)
