@@ -49,6 +49,16 @@ class Agv:
         self.dest = ()
         self.occupied_time = 0
 
+    def __str__(self):
+        str = f"""
+Agv {self.index} real-time information:
+State: {self.state}
+Velocity: {self.velocity}
+Location: {self.loc}
+Heading: {self.heading}
+Next destination: {self.dest}
+"""
+        return str
     def next_step(self):
         '''
         A function describes the next-step action of agv.
@@ -60,7 +70,6 @@ class Agv:
 
         # the location of agv and the current destination should be in the same row/column
         assert (self.dest[0] == self.loc[0]) | (self.dest[1] == self.loc[1])
-
         # agv is still in progress of some actions (rotating, loading, unloading)
         if self.occupied_time > 0:
             self.occupied_time -= 1
@@ -74,7 +83,7 @@ class Agv:
                     self.state = 'rotating'
                     # turn 90/180
                     cnt_turn = max(abs(heading_target[0] - self.heading[0]), abs(heading_target[1] - self.heading[1]))
-                    self.occupied_time = self.rotate_time * cnt_turn
+                    self.occupied_time = self.rotate_time * cnt_turn - 1
                     self.heading = (np.sign(self.dest[0] - self.loc[0]), np.sign(self.dest[1] - self.loc[1]))
                     return
             else:
@@ -122,25 +131,23 @@ class Agv:
 
         # when the agv does not need to accelerate to max_velocity
         if dist_max_velocity_min > dist_target:
-            t_min = (self.max_velocity - velocity) / self.acceleration + self.max_velocity / self.deceleration
+            # find the max velocity: (v+x)(x-v)/2a + x^2/2d = dist_target
+            velocity_u = np.sqrt((dist_target + velocity ** 2 / 2 / self.acceleration) / (
+                    1 / 2 / self.acceleration + 1 / 2 / self.deceleration))
+            t_acc = (velocity_u - velocity) / self.acceleration
+            t_total = t_acc + velocity_u / self.deceleration
+
             # if the agv can arrive at the target within 1 unit of time
-            if t_min <= 1:
+            if t_total <= 1:
                 dist_move = dist_target
                 t_total = 1
-            else:
-                # find the max velocity: (v+x)(x-v)/2a + x^2/2d = dist_target
-                velocity_u = np.sqrt((dist_target + velocity ** 2 / 2 / self.acceleration) / (
-                        1 / 2 / self.acceleration + 1 / 2 / self.deceleration))
-                t_acc = (velocity_u - velocity) / self.acceleration
-                t_total = t_acc + velocity_u / self.deceleration
-
-                if t_acc > 1:  # end within acceleration period
-                    velocity_end = velocity + self.acceleration * 1
-                    dist_move = (velocity + velocity_u) / 2 * 1
-                else:  # end within deceleration period
-                    velocity_end = velocity_u - self.deceleration * (1 - t_acc)
-                    dist_move = (velocity + velocity_u) / 2 * t_acc + (velocity_u + velocity_end) / 2 * (1 - t_acc)
-                # when the agv can cruise at the max_velocity
+            elif t_acc > 1:  # end within acceleration period
+                velocity_end = velocity + self.acceleration * 1
+                dist_move = (velocity + velocity_u) / 2 * 1
+            else:  # end within deceleration period
+                velocity_end = velocity_u - self.deceleration * (1 - t_acc)
+                dist_move = (velocity + velocity_u) / 2 * t_acc + (velocity_u + velocity_end) / 2 * (1 - t_acc)
+        # when the agv can cruise at the max_velocity
         else:
             t_acc = (self.max_velocity - velocity) / self.acceleration
             t_dec = self.max_velocity / self.deceleration
@@ -245,8 +252,10 @@ class Agv:
                     dist_pair = np.array([[dist[ind_i, ind_j] for ind_j in list_ind_j] for ind_i in list_ind_i])
                     ind_min = np.argmin(dist_pair)
                     ind_sur_i, ind_sur_j = list_ind_i[ind_min // len(list_ind_j)], list_ind_j[ind_min % len(list_ind_j)]
-                    if (self.grid[cord_i] == 1):
+                    if (i != ind_sur_i):
                         next_grid[i, j] = ind_sur_i
+                    elif (ind_sur_i == ind_sur_j):
+                        next_grid[i, j] = j
                     else:
                         next_grid[i, j] = next_grid[ind_sur_i, ind_sur_j]
 
@@ -254,14 +263,11 @@ class Agv:
 
     def pathfinding(self, orig, dest):
         ind_orig, ind_dest = self.to_ind(orig), self.to_ind(dest)
-        # TODO: deal with first/last order
-        l_path = [dest]
+        l_path = []
         ind_tmp = self.next_grid[ind_orig, ind_dest]
         while ind_tmp != ind_dest:
-            l_path = [self.to_cord(ind_tmp)] + l_path
-            ind_tmp = self.next_grid[ind_orig, ind_tmp]
-
-        l_path = [orig] + l_path
+            l_path = l_path + [self.to_cord(ind_tmp)]
+            ind_tmp = self.next_grid[ind_tmp, ind_dest]
 
         self.path = self.path + l_path
 
