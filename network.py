@@ -50,18 +50,23 @@ class Warehousemap:
     def next_step(self):
         for agv in self.list_agv:
             if agv.state == 'idle':
-                if agv.packages:
-                    package = agv.packages.pop()
-                    agv.pathfinding(agv.loc, package.orig.loc)
-                    agv.pathfinding(package.orig.loc, package.dest.loc)
+                if agv.assigned_packages:
+                    package = agv.assigned_packages[0]
+                    if agv.path:
+                        agv.pathfinding(agv.path[-1], package.orig.loc)
+                    else:
+                        agv.pathfinding(agv.loc, package.orig.loc)
+                    agv.pathfinding(agv.path[-1], package.dest.loc)
                     agv.actions.append(('loading', package))
                     agv.actions.append(('unloading', package))
                     agv.state = 'moving'
-                    agv.dest = agv.path.pop(0)
+                    agv.dest = agv.path[0]
                     agv.next_step()
             else:
                 agv.next_step()
 
         for ws in self.list_ws:
             ws.next_step()
+
+        self.t += 1
         return
