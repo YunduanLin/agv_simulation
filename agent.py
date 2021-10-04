@@ -57,6 +57,8 @@ Velocity: {self.velocity}
 Location: {self.loc}
 Heading: {self.heading}
 Next destination: {self.dest}
+Path: {self.path}
+Loaded packages: {[package.index for package in self.loaded_packages] if self.loaded_packages else 'None'}
 """
         return str
     def next_step(self):
@@ -73,6 +75,32 @@ Next destination: {self.dest}
             self.occupied_time -= 1
 
         else:
+            # if agv arrives at the target destination, point to the next destination
+            if self.loc == self.dest:
+                self.path.pop(0)
+                self.dest = self.path[0] if self.path else ()
+
+                # load/unload packages at the origin/destination
+                if self.actions:
+                    action, package = self.actions[0]
+                    if (action == 'loading') & (
+                            (abs(self.loc[0] - package.orig.loc[0]) + abs(self.loc[1] - package.orig.loc[1])) == 1):
+                        assert package in self.assigned_packages
+                        self.occupied_time += package.orig.add_to_queue(package)
+                        self.state = package.state = 'loading'
+                        self.loaded_packages.append(package)
+                        self.assigned_packages.remove(package)
+                        self.actions.pop(0)
+                        return
+                    elif (action == 'unloading') & (
+                            (abs(self.loc[0] - package.dest.loc[0]) + abs(self.loc[1] - package.dest.loc[1])) == 1):
+                        assert package in self.loaded_packages
+                        self.state, package.state = 'unloading', 'completed'
+                        self.occupied_time += self.unload_time - 1
+                        self.loaded_packages.remove(package)
+                        self.actions.pop(0)
+                        return
+
             # if heading does not align with current destination, rotate.
             if self.dest:
                 # the location of agv and the current destination should be in the same row/column
@@ -96,35 +124,9 @@ Next destination: {self.dest}
             _, self.velocity, dist_move = self.move(
                 self.velocity, abs(self.loc[0] - self.dest[0]) + abs(self.loc[1] - self.dest[1]))
             self.loc = (self.loc[0] + self.heading[0] * dist_move, self.loc[1] + self.heading[1] * dist_move)
-
-            # if agv arrives at the target destination, point to the next destination
-            if self.loc == self.dest:
-                self.path.pop(0)
-                self.dest = self.path[0] if self.path else ()
-
-                # load/unload packages at the origin/destination
-                if self.actions:
-                    action, package = self.actions[0]
-                    if (action == 'loading') & (
-                            (abs(self.loc[0] - package.orig.loc[0]) + abs(self.loc[1] - package.orig.loc[1])) == 1):
-                        assert package in self.assigned_packages
-                        self.occupied_time = package.orig.add_to_queue(package)
-                        self.state = package.state = 'loading'
-                        self.loaded_packages.append(package)
-                        self.assigned_packages.remove(package)
-                        self.actions.pop(0)
-                    elif (action == 'unloading') & (
-                            (abs(self.loc[0] - package.dest.loc[0]) + abs(self.loc[1] - package.dest.loc[1])) == 1):
-                        assert package in self.loaded_packages
-                        self.state, package.state = 'unloading', 'completed'
-                        self.occupied_time = self.unload_time
-                        self.loaded_packages.remove(package)
-                        self.actions.pop(0)
-
         return
 
     def move(self, velocity, dist_target):
-        t_total = 0
         velocity_end, dist_move = 0, 0
 
         # the least distance that agv needs to go before decelerating to 0 if it first accelerates to max_velocity
@@ -266,7 +268,7 @@ Next destination: {self.dest}
 
     def pathfinding(self, orig, dest):
         ind_orig, ind_dest = self.to_ind(orig), self.to_ind(dest)
-        l_path = []
+        l_path = [orig]
         ind_tmp = self.next_grid[ind_orig, ind_dest]
         while ind_tmp != ind_dest:
             l_path = l_path + [self.to_cord(ind_tmp)]
@@ -309,6 +311,7 @@ class Workstation:
 
         self.loc = (x, y)
         self.occupied_time = 0
+        self.serving_package = None
         self.packages = []
         self.queue = []
 
@@ -319,11 +322,13 @@ class Workstation:
         :return: current agv waiting time
         '''
         if self.queue:
-            self.occupied_time = self.process_time + 1  # next step of ws is called after agv
-        self.queue.append(package)
+            self.queue.append(package)
+        else:
+            self.occupied_time = self.process_time
+            self.serving_package = package
         self.packages.remove(package)
 
-        return self.occupied_time + (len(self.queue) - 1) * self.process_time
+        return self.occupied_time + len(self.queue) * self.process_time
 
     def next_step(self):
         '''
@@ -332,12 +337,11 @@ class Workstation:
         '''
         assert len(self.queue) <= self.buffer_capacity
 
-        if self.queue:
-            if self.occupied_time > 1:
-                self.occupied_time -= 1
-            else:
-                self.occupied_time = self.process_time
-                self.queue.pop(0)
+        if self.occupied_time > 1:
+            self.occupied_time -= 1
+        elif self.queue:
+            self.occupied_time = self.process_time
+            self.serving_package = self.queue.pop(0)
 
 
 class Dropstation:
