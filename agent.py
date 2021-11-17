@@ -172,100 +172,6 @@ Loaded packages: {[package.index for package in self.loaded_packages] if self.lo
                             (self.max_velocity + velocity_end) / 2 * (1 - t_acc - t_const)
         return np.ceil(t_total), velocity_end, dist_move
 
-    def find_feasible_interval(self, l_grid, cord):
-        '''
-        A function calculate the maximum straight-line distance of a starting point on both sides.
-        :arg l_grid (List[int]): layout of warehouse in one dimension.
-        :arg cord (int): the cordinate of starting point.
-        :return: cord_min, cord_max: the cordinate of points on both sides.
-        '''
-        tmp = np.where(l_grid[:cord] != 0)[0]
-        cord_min = (tmp[-1] + 1) if len(tmp) > 0 else 0
-        tmp = np.where(l_grid[cord:] != 0)[0]
-        cord_max = (cord + tmp[0] - 1) if len(tmp) > 0 else (len(l_grid) - 1)
-        return cord_min, cord_max
-
-    def to_ind(self, cord):
-        return int(cord[0] * self.width + cord[1])
-
-    def to_cord(self, ind):
-        return (ind // self.width, ind % self.width)
-
-    def to_surrounding(self, cord):
-        list_cord = [cord]
-        if self.grid[cord]:
-            list_cord = []
-            if (cord[0] > 0):
-                list_cord = list_cord + [(cord[0] - 1, cord[1])] if (self.grid[cord[0] - 1, cord[1]] == 0) else []
-            if (cord[1] > 0):
-                list_cord = list_cord + [(cord[0], cord[1] - 1)] if (self.grid[cord[0], cord[1] - 1] == 0) else []
-            if (cord[0] < self.height - 1):
-                list_cord = list_cord + [(cord[0] + 1, cord[1])] if (self.grid[cord[0] + 1, cord[1]] == 0) else []
-            if (cord[1] < self.width - 1):
-                list_cord = list_cord + [(cord[0], cord[1] + 1)] if (self.grid[cord[0], cord[1] + 1] == 0) else []
-        return list_cord
-
-    def generate_shortest_path(self, grid):
-        '''
-        A function describes find the shortest path for each pair of grids.
-        :arg grid (Array): layout of warehouse, indicating where are the stations.
-        :return:
-        '''
-        self.grid = grid
-        self.height, self.width = grid.shape
-        self.cnt_grid = self.height * self.width
-        dist = big_M * np.ones((self.height * self.width, self.height * self.width))
-        next_grid = np.repeat([np.arange(0, self.cnt_grid, 1)], self.cnt_grid, axis=0)
-        self.dist_straight = [self.move(0, dist)[0] for dist in range(max(self.height, self.width))]
-
-        # initialize straight-line distance for each pair of grids
-        for i in range(self.height):
-            for j in range(self.width):
-                if self.grid[i, j] == 0:  # the grid is not a station
-                    ind = self.to_ind((i, j))
-                    # horizontal
-                    j_min, j_max = self.find_feasible_interval(self.grid[i, :], j)
-                    dist[ind, self.to_ind((i, j_min)):self.to_ind((i, j + 1))] = self.dist_straight[:j - j_min + 1][
-                                                                                 ::-1]
-                    dist[ind, self.to_ind((i, j)):self.to_ind((i, j_max + 1))] = self.dist_straight[:j_max - j + 1]
-                    # vertical
-                    i_min, i_max = self.find_feasible_interval(self.grid[:, j], i)
-                    dist[ind, self.to_ind((i_min, j)):self.to_ind((i + 1, j)):self.width] = self.dist_straight[
-                                                                                            :i - i_min + 1][::-1]
-                    dist[ind, self.to_ind((i, j)):self.to_ind((i_max + 1, j)):self.width] = self.dist_straight[
-                                                                                            :i_max - i + 1]
-                else:
-                    dist[i, i] = 0
-
-        # use Floyd algorithm to update the shortest distance and path
-        for k in range(self.cnt_grid):
-            for i in range(self.cnt_grid):
-                for j in range(self.cnt_grid):
-                    if dist[i, k] + dist[k, j] + self.rotate_time < dist[i, j]:
-                        dist[i, j] = dist[i, k] + dist[k, j] + self.rotate_time  # add rotation time at each turning
-                        next_grid[i, j] = next_grid[i, k]
-
-        # use the shortest distance of surrounding grids to replace the shortest path between stations.
-        for i in range(self.cnt_grid):
-            for j in range(self.cnt_grid):
-                cord_i, cord_j = self.to_cord(i), self.to_cord(j)
-                if (self.grid[cord_i] == 1) | (self.grid[cord_j] == 1):
-                    list_cord_i, list_cord_j = self.to_surrounding(cord_i), \
-                                               self.to_surrounding(cord_j)
-                    list_ind_i, list_ind_j = [self.to_ind(cord) for cord in list_cord_i], \
-                                             [self.to_ind(cord) for cord in list_cord_j]
-                    dist_pair = np.array([[dist[ind_i, ind_j] for ind_j in list_ind_j] for ind_i in list_ind_i])
-                    ind_min = np.argmin(dist_pair)
-                    ind_sur_i, ind_sur_j = list_ind_i[ind_min // len(list_ind_j)], list_ind_j[ind_min % len(list_ind_j)]
-                    if (i != ind_sur_i):
-                        next_grid[i, j] = ind_sur_i
-                    elif (ind_sur_i == ind_sur_j):
-                        next_grid[i, j] = j
-                    else:
-                        next_grid[i, j] = next_grid[ind_sur_i, ind_sur_j]
-
-        self.dist, self.next_grid = dist, next_grid
-
     def pathfinding(self, orig, dest):
         ind_orig, ind_dest = self.to_ind(orig), self.to_ind(dest)
         l_path = [orig]
@@ -275,7 +181,6 @@ Loaded packages: {[package.index for package in self.loaded_packages] if self.lo
             ind_tmp = self.next_grid[ind_tmp, ind_dest]
 
         self.path = self.path + l_path
-
 
 class Package:
     def __init__(self, orig, dest, index):
@@ -328,7 +233,7 @@ class Workstation:
             self.serving_package = package
         self.packages.remove(package)
 
-        return self.occupied_time + len(self.queue) * self.process_time
+        return self.occupied_time + len(self.queue) * self.process_time - 1
 
     def next_step(self):
         '''
