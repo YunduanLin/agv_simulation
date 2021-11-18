@@ -41,16 +41,30 @@ class Warehousemap:
             self.list_agv.append(node_agv)
             self.cnt_agv += 1
 
-    def to_ind(self, i, j):
-        return int(i * self.width + j)
+    def add_package(self, orig, dest, agv = None):
+        package = Package(self.list_ws[orig], self.list_ds[dest], self.cnt_p)
+        self.cnt_p += 1
+        self.list_ws[orig].packages.append(package)
+        if agv is not None:
+            self.list_agv[agv].assigned_packages.append(package)
 
-    def to_cord(self, ind):
+    def coord_to_ind(self, coord):
+        return int(coord[0] * self.width + coord[1])
+
+    def ind_to_coord(self, ind):
         return ind // self.width, ind % self.width
+
+    def coord3d_to_node(self, coord3d):
+        return self.coord_to_ind(coord3d[:2]) * 4 + coord3d[2]
+
+    def node_to_coord3d(self, node):
+        x, y = self.ind_to_coord(node // 4)
+        return x, y, node % 4
 
     def update_station_patch(self, list_s):
         for s in list_s:
             x, y = s.loc
-            patch_ind = self.to_ind(x, y)
+            patch_ind = self.coord_to_ind((x,y))
             self.mat_patch[x, y].reset_dist()
             if x>0:
                 self.mat_patch[x-1, y].set_pd_dist(2)
@@ -75,7 +89,7 @@ class Warehousemap:
         for i in range(self.height):
             for j in range(self.width):
                 # generate patches and link four intra-patch nodes
-                patch_ind = self.to_ind(i, j)
+                patch_ind = self.coord_to_ind((i, j))
                 patch_dir = (- 2 * (i % 2) + 1, 2 * (j % 2) - 1)
                 self.mat_patch[i, j] = patch(patch_ind, patch_dir, v_rotation)
 
@@ -94,15 +108,8 @@ class Warehousemap:
 
         for i in range(self.height):
             for j in range(self.width):
-                patch_ind = self.to_ind(i, j)
+                patch_ind = self.coord_to_ind((i, j))
                 self.dist[4*patch_ind:4*patch_ind+4, 4*patch_ind:4*patch_ind+4] = self.mat_patch[i,j].dist
-
-    def add_package(self, orig, dest, agv = None):
-        package = Package(self.list_ws[orig], self.list_ds[dest], self.cnt_p)
-        self.cnt_p += 1
-        self.list_ws[orig].packages.append(package)
-        if agv is not None:
-            self.list_agv[agv].assigned_packages.append(package)
 
     def generate_graph(self):
         tmp = (self.dist<np.inf).astype(int)
@@ -111,8 +118,33 @@ class Warehousemap:
         for e in self.nx_graph.edges:
             nx.set_edge_attributes(self.nx_graph, {e:{'cost':self.dist[e]}})
 
-    def pathfinding(self, orig, dest):
-        pass
+    def pathfinding(self, coord3d_orig, coord_dest):
+        node_orig = self.coord3d_to_node(coord3d_orig)
+        ind_dest = self.coord_to_ind(coord_dest)
+        shortest_path_length, shortest_path = np.inf, []
+        for i in range(4):
+            try:
+                path, path_length = nx.astar_path(self.nx_graph, node_orig, ind_dest*4+i, weight='cost'), \
+                                    nx.astar_path_length(self.nx_graph, node_orig, ind_dest*4+i, weight='cost')
+                if (path_length < shortest_path_length) | (
+                        path_length == shortest_path_length) & (len(path) < len(shortest_path)):
+                    shortest_path_length, shortest_path = path_length, path
+            except nx.NetworkXNoPath:
+                pass
+
+        agv_path = [coord3d_orig]
+        i = 1
+        while i<len(shortest_path)-1:
+            x, y, z_1 = self.node_to_coord3d(shortest_path[i])
+            _, _, z_2 = self.node_to_coord3d(shortest_path[i+1])
+            if z_1 != (z_2+2) % 4:
+                agv_path.append((x, y, z_1))
+            i+=1
+
+        agv_path.append(self.node_to_coord3d(shortest_path[-1]))
+
+        return agv_path
+
     def next_step(self):
         for agv in self.list_agv:
             agv.next_step()
@@ -120,8 +152,7 @@ class Warehousemap:
                 if agv.assigned_packages:
                     package = agv.assigned_packages[0]
                     if agv.path:
-                        pass
-                        # agv.pathfinding(agv.path[-1], package.orig.loc)
+                        self.pathfinding(agv.path[-1], package.orig.loc)
                     else:
                         agv.pathfinding(agv.loc, package.orig.loc)
                     agv.pathfinding(agv.path[-1], package.dest.loc)
