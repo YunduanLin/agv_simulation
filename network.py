@@ -1,4 +1,5 @@
 import numpy as np
+import networkx as nx
 import matplotlib.pyplot as plt
 from agent import *
 from patch import patch
@@ -18,12 +19,10 @@ class Warehousemap:
             self.add_agent(**agent)
 
         self.initialize_patches()
+        self.generate_graph()
 
-        # for package in packages:
-        #     self.add_package(**package)
-        #
-        # for agv in self.list_agv:
-        #     agv.generate_shortest_path(self.grid)
+        for package in packages:
+            self.add_package(**package)
 
     def add_agent(self, x, y, node_type, n=None):
         if node_type == 'workstation':
@@ -55,19 +54,15 @@ class Warehousemap:
             self.mat_patch[x, y].reset_dist()
             if x>0:
                 self.mat_patch[x-1, y].set_pd_dist(2)
-                self.dist[4*patch_ind, 4*(patch_ind-self.width)+2] = 0
                 self.dist[4*(patch_ind-self.width)+2, 4*patch_ind] = 0
             if y>0:
                 self.mat_patch[x, y-1].set_pd_dist(3)
-                self.dist[4*patch_ind+1, 4*(patch_ind-1)+3] = 0
                 self.dist[4*(patch_ind-1)+3, 4*patch_ind+1] = 0
             if x<self.height-1:
                 self.mat_patch[x+1, y].set_pd_dist(0)
-                self.dist[4*patch_ind+2, 4*(patch_ind+self.width)] = 0
                 self.dist[4*(patch_ind+self.width), 4*patch_ind+2] = 0
             if y<self.width-1:
                 self.mat_patch[x, y+1].set_pd_dist(1)
-                self.dist[4*patch_ind+3, 4*(patch_ind+1)+1] = 0
                 self.dist[4*(patch_ind+1)+1, 4*patch_ind+3] = 0
 
     def initialize_patches(self):
@@ -109,7 +104,15 @@ class Warehousemap:
         if agv is not None:
             self.list_agv[agv].assigned_packages.append(package)
 
+    def generate_graph(self):
+        tmp = (self.dist<np.inf).astype(int)
+        np.fill_diagonal(tmp, 0)
+        self.nx_graph = nx.from_numpy_matrix(tmp, create_using=nx.DiGraph)
+        for e in self.nx_graph.edges:
+            nx.set_edge_attributes(self.nx_graph, {e:{'cost':self.dist[e]}})
 
+    def pathfinding(self, orig, dest):
+        pass
     def next_step(self):
         for agv in self.list_agv:
             agv.next_step()
@@ -117,7 +120,8 @@ class Warehousemap:
                 if agv.assigned_packages:
                     package = agv.assigned_packages[0]
                     if agv.path:
-                        agv.pathfinding(agv.path[-1], package.orig.loc)
+                        pass
+                        # agv.pathfinding(agv.path[-1], package.orig.loc)
                     else:
                         agv.pathfinding(agv.loc, package.orig.loc)
                     agv.pathfinding(agv.path[-1], package.dest.loc)
