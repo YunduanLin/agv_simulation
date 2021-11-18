@@ -37,14 +37,9 @@ class patch:
     def set_pd_dist(self, ind):
         is_inout = np.median(self.dist, axis=1) < np.inf
         if is_inout[ind]:
-            in1, in2 = np.where(is_inout)[0]
-            self.dist[in1, in2] = 0
-            self.dist[in2, in1] = 0
-            self.dist[ind, (ind+2) % 4] = self.v_rotation
+            ind2 = np.sum(np.where(is_inout)[0])-ind
+            self.dist[ind2, ind] = 0
         else:
             tmp = np.where(self.dist[:,ind]<np.inf)[0]
-            in1, in2 = tmp[tmp!=ind]
-            self.dist[in1, ind] = 0
-            self.dist[in2, ind] = 0
-            self.dist[ind, in1] = 0
-            self.dist[ind, in2] = 0
+            ind2 = tmp[(tmp!=ind) & (tmp!=(ind+2)%4)]
+            self.dist[ind2, ind] = 0
