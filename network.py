@@ -125,8 +125,8 @@ class Warehousemap:
         shortest_path_length, shortest_path = np.inf, []
         for i in range(4):
             try:
-                path, path_length = nx.astar_path(self.nx_graph, node_orig, ind_dest*4+i, weight='cost'), \
-                                    nx.astar_path_length(self.nx_graph, node_orig, ind_dest*4+i, weight='cost')
+                path, path_length = nx.astar_path(self.nx_graph, node_orig, ind_dest * 4 + i, weight='cost'), \
+                                    nx.astar_path_length(self.nx_graph, node_orig, ind_dest * 4 + i, weight='cost')
                 if (path_length < shortest_path_length) | (
                         path_length == shortest_path_length) & (len(path) < len(shortest_path)):
                     shortest_path_length, shortest_path = path_length, path
@@ -140,28 +140,25 @@ class Warehousemap:
             _, _, z_2 = self.node_to_coord3d(shortest_path[i+1])
             if z_1 != (z_2+2) % 4:
                 agv_path.append((x, y, z_1))
-            i+=1
+            i += 1
 
-        agv_path.append(self.node_to_coord3d(shortest_path[-1]))
-
+        dest_of_path = self.node_to_coord3d(shortest_path[-3])
+        if (dest_of_path[0]!=agv_path[-1][0]) | (dest_of_path[1]!=agv_path[-1][1]):
+            agv_path.append(dest_of_path)
         return agv_path
+
+    def route_planning(self):
+        for agv in self.list_agv:
+            loc_start = agv.loc
+            for package in agv.assigned_packages:
+                agv.paths.append(self.pathfinding(loc_start, package.orig.loc))
+                agv.paths.append(self.pathfinding(agv.paths[-1][-1], package.dest.loc))
+                loc_start = agv.paths[-1][-1]
+                agv.actions = agv.actions + ['loading', 'unloading']
 
     def next_step(self):
         for agv in self.list_agv:
             agv.next_step()
-            if agv.state == 'idle':
-                if agv.assigned_packages:
-                    package = agv.assigned_packages[0]
-                    if agv.path:
-                        self.pathfinding(agv.path[-1], package.orig.loc)
-                    else:
-                        self.pathfinding(agv.loc, package.orig.loc)
-                    self.pathfinding(agv.path[-1], package.dest.loc)
-                    agv.actions.append(('loading', package))
-                    agv.actions.append(('unloading', package))
-                    agv.state = 'moving'
-                    agv.dest = agv.path[0]
-                    agv.next_step()
 
         for ws in self.list_ws:
             ws.next_step()

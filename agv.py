@@ -41,6 +41,7 @@ class Agv:
         self.loaded_packages = []
         self.assigned_packages = []
         self.actions = []
+        self.paths = []
         self.path = []
 
         self.dest = ()
@@ -67,57 +68,62 @@ Loaded packages: {[package.index for package in self.loaded_packages] if self.lo
         # agv is still in progress of some actions (rotating, loading, unloading)
         if self.occupied_time > 0:
             self.occupied_time -= 1
+            return
 
+        if self.state in ['idle', 'loading', 'unloading']:
+            if self.paths:
+                self.state = 'moving'
+                self.path = self.paths[0]
+                self.dest = self.path[0]
+            else:
+                self.state = 'idle'
+                print(f'Agv {self.index} is idle.')
+                return
         else:
             # if agv arrives at the target destination, point to the next destination
-            if self.loc[:2] == self.dest:
+
+            if (self.loc[0] == self.dest[0]) & (self.loc[1] == self.dest[1]):
+                self.loc = self.dest
                 self.path.pop(0)
                 self.dest = self.path[0] if self.path else ()
 
                 # load/unload packages at the origin/destination
-                if self.actions:
+                if not self.dest:
                     action = self.actions[0]
                     if action == 'loading':
                         package = self.assigned_packages[0]
-                        assert self.loc[:2] == package.orig.loc
                         self.occupied_time += package.orig.add_to_queue(package)
                         self.state = package.state = 'loading'
                         self.loaded_packages.append(package)
                         self.assigned_packages.remove(package)
-                        self.actions.pop(0)
-                        return
                     elif action == 'unloading':
                         package = self.loaded_packages[0]
-                        assert  self.loc[:2] == package.dest.loc
                         self.state, package.state = 'unloading', 'completed'
                         self.occupied_time += self.unload_time - 1
                         self.loaded_packages.remove(package)
-                        self.actions.pop(0)
-                        return
 
-            if self.dest:
-                # the location of agv and the current destination should be in the same row/column
-                assert (self.dest[0] == self.loc[0]) | (self.dest[1] == self.loc[1])
-                self.loc = self.dest[0]
-                heading_target = (np.sign(self.dest[0] - self.loc[0]), np.sign(self.dest[1] - self.loc[1]))
-                # if heading does not align with current destination, rotate.
-                if heading_target != self.heading:
-                    assert self.velocity == 0
-                    self.state = 'rotating'
-                    # turn 90/180
-                    cnt_turn = max(abs(heading_target[0] - self.heading[0]), abs(heading_target[1] - self.heading[1]))
-                    self.occupied_time = self.rotate_time * cnt_turn - 1
-                    self.heading = (np.sign(self.dest[0] - self.loc[0]), np.sign(self.dest[1] - self.loc[1]))
+                    self.actions.pop(0)
+                    self.paths.pop(0)
                     return
-            else:
-                # path is finished, agv becomes idle
-                self.state = 'idle'
+
+        if self.dest:
+            # the location of agv and the current destination should be in the same row/column
+            assert (self.dest[0] == self.loc[0]) | (self.dest[1] == self.loc[1])
+            heading_target = (np.sign(self.dest[0] - self.loc[0]), np.sign(self.dest[1] - self.loc[1]))
+            # if heading does not align with current destination, rotate.
+            if heading_target != self.heading:
+                assert self.velocity == 0
+                self.state = 'rotating'
+                # turn 90/180
+                cnt_turn = max(abs(heading_target[0] - self.heading[0]), abs(heading_target[1] - self.heading[1]))
+                self.occupied_time = self.rotate_time * cnt_turn - 1
+                self.heading = (np.sign(self.dest[0] - self.loc[0]), np.sign(self.dest[1] - self.loc[1]))
                 return
 
-            self.state = 'moving'
-            _, self.velocity, dist_move = self.move(
-                self.velocity, abs(self.loc[0] - self.dest[0]) + abs(self.loc[1] - self.dest[1]))
-            self.loc = (self.loc[0] + self.heading[0] * dist_move, self.loc[1] + self.heading[1] * dist_move, )
+        self.state = 'moving'
+        _, self.velocity, dist_move = self.move(
+            self.velocity, abs(self.loc[0] - self.dest[0]) + abs(self.loc[1] - self.dest[1]))
+        self.loc = (self.loc[0] + self.heading[0] * dist_move, self.loc[1] + self.heading[1] * dist_move, )
         return
 
     def move(self, velocity, dist_target):
