@@ -2,7 +2,8 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 from agent import *
-from patch import patch
+from agv import Agv
+from patch import Patch
 
 class Warehousemap:
     def __init__(self, height, width, agents, packages):
@@ -90,8 +91,8 @@ class Warehousemap:
             for j in range(self.width):
                 # generate patches and link four intra-patch nodes
                 patch_ind = self.coord_to_ind((i, j))
-                patch_dir = (- 2 * (i % 2) + 1, 2 * (j % 2) - 1)
-                self.mat_patch[i, j] = patch(patch_ind, patch_dir, v_rotation)
+                patch_dir = (- 2 * (i % 2) + 1, - 2 * (j % 2) + 1)
+                self.mat_patch[i, j] = Patch(patch_ind, patch_dir, v_rotation)
 
                 # link inter-patch nodes
                 if i>0:
@@ -154,8 +155,8 @@ class Warehousemap:
                     if agv.path:
                         self.pathfinding(agv.path[-1], package.orig.loc)
                     else:
-                        agv.pathfinding(agv.loc, package.orig.loc)
-                    agv.pathfinding(agv.path[-1], package.dest.loc)
+                        self.pathfinding(agv.loc, package.orig.loc)
+                    self.pathfinding(agv.path[-1], package.dest.loc)
                     agv.actions.append(('loading', package))
                     agv.actions.append(('unloading', package))
                     agv.state = 'moving'
