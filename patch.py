@@ -1,21 +1,21 @@
 import numpy as np
 
-# keys are directions, values are node connection with the former two keep straight and latter two rotate
+# keys are directions, values are node connection
 CONNECT_STRAIGHT = {
-    (1, 1): ([1, 2], [3, 0]),
-    (-1, -1): ([3, 0], [1, 2]),
-    (1, -1): ([1, 0], [3, 2]),
-    (-1, 1): ([3, 2], [1, 0])
+    (1, 1): ([1, 0], [3, 2]),
+    (-1, -1): ([3, 2], [1, 0]),
+    (1, -1): ([1, 2], [3, 0]),
+    (-1, 1): ([3, 0], [1, 2])
 }
 
 CONNECT_ROTATION = {
-    (1, 1): ([1, 2], [0, 3]),
-    (-1, -1): ([0, 3], [1, 2]),
-    (1, -1): ([1, 0], [2, 3]),
-    (-1, 1): ([2, 3], [1, 0])
+    (1, 1): ([1, 0], [2, 3]),
+    (-1, -1): ([2, 3], [1, 0]),
+    (1, -1): ([1, 2], [0, 3]),
+    (-1, 1): ([0, 3], [1, 2])
 }
 
-class patch:
+class Patch:
     def __init__(self, ind, direction, v_rotation):
         '''
         define patch
