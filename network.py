@@ -1,129 +1,171 @@
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+from copy import deepcopy
 from agent import *
 from agv import Agv
 from patch import Patch
 
+
 class Warehousemap:
+    '''
+    :arg: height/width (int): the number of patches representing the height/width of warehousemap
+    :arg: list_ws/list_ds/list_agv (list): the list of workstations/dropstations/agvs
+    :arg: cnt_ws/cnt_ds/cnt_agv/cnt_package/cnt_node (int):
+            the total number of workstations/dropstations/agvs/packages/nodes
+    :arg: mat_patch (matrix): the matrix
+    :arg: dist (matrix): the distance matrix between nodes
+    :arg: t (int): timer
+    '''
+
     def __init__(self, height, width, agents, packages):
         self.height, self.width = height, width
-        self.list_ws, self.list_ds, self.list_agv = [], [], [] # Collections of workstations, dropstations and agvs
+        self.mat_patch = np.empty((self.height, self.width), dtype=object)
+
+        self.list_ws, self.list_ds, self.list_agv = [], [], []
         self.cnt_ws, self.cnt_ds, self.cnt_agv = 0, 0, 0
-        self.cnt_p = 0
+        self.cnt_package = 0
 
         self.t = 0
 
-        self.mat_patch = np.empty((self.height, self.width), dtype=object)
-
         for agent in agents:
             self.add_agent(**agent)
+        for package in packages:
+            self.add_package(**package)
 
         self.initialize_patches()
         self.generate_graph()
 
-        for package in packages:
-            self.add_package(**package)
-
-    def add_agent(self, x, y, node_type, n=None):
-        if node_type == 'workstation':
-            # add workstation
-            node_ws = Workstation(x, y, self.cnt_ws)
-            self.list_ws.append(node_ws)
+    def add_agent(self, x, y, agent_type, n=None):
+        '''
+        Add agents (workstation/dropstation/agv)
+        :param x/y (int): location
+        :param agent_type: identify the type of agents
+        :param n: capacity for agv
+        '''
+        if agent_type == 'workstation':
+            ws = Workstation(x, y, self.cnt_ws)
+            self.list_ws.append(ws)
             self.cnt_ws += 1
-        elif node_type == 'dropstation':
-            # add dropstation
-            node_ds = Dropstation(x, y, self.cnt_ds)
-            self.list_ds.append(node_ds)
+        elif agent_type == 'dropstation':
+            ds = Dropstation(x, y, self.cnt_ds)
+            self.list_ds.append(ds)
             self.cnt_ds += 1
-        elif node_type == 'agv':
-            # add agv
-            node_agv = Agv(x, y, self.cnt_agv, n)
-            self.list_agv.append(node_agv)
+        elif agent_type == 'agv':
+            agv = Agv(x, y, self.cnt_agv, n)
+            self.list_agv.append(agv)
             self.cnt_agv += 1
 
-    def add_package(self, orig, dest, agv = None):
-        package = Package(self.list_ws[orig], self.list_ds[dest], self.cnt_p)
-        self.cnt_p += 1
+    def add_package(self, orig, dest, agv=None):
+        '''
+        Add packages
+        :param orig: the index of workstation where the package will be picked up
+        :param dest: the index of dropstation where the package will be dropped off
+        :param agv: the index of agv which this package is assigned to
+        '''
+        package = Package(self.list_ws[orig], self.list_ds[dest], self.cnt_package)
+        self.cnt_package += 1
         self.list_ws[orig].packages.append(package)
         if agv is not None:
             self.list_agv[agv].assigned_packages.append(package)
 
+    # convert patch coordinate to patch index
     def coord_to_ind(self, coord):
         return int(coord[0] * self.width + coord[1])
 
+    # convert patch index to patch coordinate
     def ind_to_coord(self, ind):
         return ind // self.width, ind % self.width
 
+    # convert node coordinate to node index
     def coord3d_to_node(self, coord3d):
         return self.coord_to_ind(coord3d[:2]) * 4 + coord3d[2]
 
+    # convert node index to node coordinate
     def node_to_coord3d(self, node):
         x, y = self.ind_to_coord(node // 4)
         return x, y, node % 4
 
+    def int_loc(self, coord):
+        return int(coord[0]), int(coord[1])
+
+    # udpate intra-patch links of station and surrounding patches
     def update_station_patch(self, list_s):
         for s in list_s:
             x, y = s.loc
-            patch_ind = self.coord_to_ind((x,y))
+            patch_ind = self.coord_to_ind((x, y))
+            # update station patch
             self.mat_patch[x, y].reset_dist()
-            if x>0:
-                self.mat_patch[x-1, y].set_pd_dist(2)
-                self.dist[4*(patch_ind-self.width)+2, 4*patch_ind] = 0
-            if y>0:
-                self.mat_patch[x, y-1].set_pd_dist(3)
-                self.dist[4*(patch_ind-1)+3, 4*patch_ind+1] = 0
-            if x<self.height-1:
-                self.mat_patch[x+1, y].set_pd_dist(0)
-                self.dist[4*(patch_ind+self.width), 4*patch_ind+2] = 0
-            if y<self.width-1:
-                self.mat_patch[x, y+1].set_pd_dist(1)
-                self.dist[4*(patch_ind+1)+1, 4*patch_ind+3] = 0
+            # update the surrounding patches
+            if x > 0:
+                self.mat_patch[x - 1, y].set_pd_dist(2)
+                self.dist[4 * (patch_ind - self.width) + 2, 4 * patch_ind] = 0
+            if y > 0:
+                self.mat_patch[x, y - 1].set_pd_dist(3)
+                self.dist[4 * (patch_ind - 1) + 3, 4 * patch_ind + 1] = 0
+            if x < self.height - 1:
+                self.mat_patch[x + 1, y].set_pd_dist(0)
+                self.dist[4 * (patch_ind + self.width), 4 * patch_ind + 2] = 0
+            if y < self.width - 1:
+                self.mat_patch[x, y + 1].set_pd_dist(1)
+                self.dist[4 * (patch_ind + 1) + 1, 4 * patch_ind + 3] = 0
 
+    # initialize all patches for the grids
     def initialize_patches(self):
         self.cnt_node = 4 * self.height * self.width
-        self.node = np.arange(self.cnt_node)
         self.dist = np.ones((self.cnt_node, self.cnt_node)) * np.inf
 
-        v_straight, v_rotation = 1 / self.list_agv[0].max_velocity, self.list_agv[0].rotate_time
+        d_straight, d_rotation = 1 / self.list_agv[0].max_velocity, self.list_agv[0].rotate_time
 
         for i in range(self.height):
             for j in range(self.width):
                 # generate patches and link four intra-patch nodes
                 patch_ind = self.coord_to_ind((i, j))
                 patch_dir = (- 2 * (i % 2) + 1, - 2 * (j % 2) + 1)
-                self.mat_patch[i, j] = Patch(patch_ind, patch_dir, v_rotation)
+                self.mat_patch[i, j] = Patch(patch_ind, patch_dir, d_rotation)
 
                 # link inter-patch nodes
-                if i>0:
-                    self.dist[4*patch_ind, 4*(patch_ind-self.width)+2] = v_straight
-                    self.dist[4*(patch_ind-self.width)+2, 4*patch_ind] = v_straight
+                if i > 0:
+                    self.dist[4 * patch_ind, 4 * (patch_ind - self.width) + 2] = d_straight
+                    self.dist[4 * (patch_ind - self.width) + 2, 4 * patch_ind] = d_straight
+                if j > 0:
+                    self.dist[4 * patch_ind + 1, 4 * (patch_ind - 1) + 3] = d_straight
+                    self.dist[4 * (patch_ind - 1) + 3, 4 * patch_ind + 1] = d_straight
 
-                if j>0:
-                    self.dist[4*patch_ind+1, 4*(patch_ind-1)+3] = v_straight
-                    self.dist[4*(patch_ind-1)+3, 4*patch_ind+1] = v_straight
-
-        # change links for station and surrounding patches
+        # change intra-patch links for station and surrounding patches
         self.update_station_patch(self.list_ws)
         self.update_station_patch(self.list_ds)
 
+        # assign intra-patch distance matrix to the map distance matrix
         for i in range(self.height):
             for j in range(self.width):
                 patch_ind = self.coord_to_ind((i, j))
-                self.dist[4*patch_ind:4*patch_ind+4, 4*patch_ind:4*patch_ind+4] = self.mat_patch[i,j].dist
+                self.dist[4 * patch_ind:4 * patch_ind + 4, 4 * patch_ind:4 * patch_ind + 4] = self.mat_patch[i, j].dist
 
+    # generate networkx graph for the entire layout
     def generate_graph(self):
-        tmp = (self.dist<np.inf).astype(int)
+        tmp = (self.dist < np.inf).astype(int)
         np.fill_diagonal(tmp, 0)
         self.nx_graph = nx.from_numpy_matrix(tmp, create_using=nx.DiGraph)
         for e in self.nx_graph.edges:
-            nx.set_edge_attributes(self.nx_graph, {e:{'cost':self.dist[e]}})
+            nx.set_edge_attributes(self.nx_graph, {e: {'cost': self.dist[e]}})
 
-    def pathfinding(self, coord3d_orig, coord_dest):
+    #
+    def pathfinding(self, coord3d_orig, coord_dest, end_at_station=True):
+        '''
+        Find the shortest path from an original node to a destination patch and convert it to a path
+        :param coord3d_orig (triple): the node coordinate of the origin which implies the direction
+        :param coord_dest (tuple): the patch coordinate of the destination station
+                which does not determine the final arrived nodes
+        :return: agv_path (list):
+        '''
         node_orig = self.coord3d_to_node(coord3d_orig)
         ind_dest = self.coord_to_ind(coord_dest)
         shortest_path_length, shortest_path = np.inf, []
+
+        # Use astar algorithm in networkx to find the shortest path
         for i in range(4):
+            # If there's not path between two nodes, the algorithm will raise NetworkXNoPath error.
             try:
                 path, path_length = nx.astar_path(self.nx_graph, node_orig, ind_dest * 4 + i, weight='cost'), \
                                     nx.astar_path_length(self.nx_graph, node_orig, ind_dest * 4 + i, weight='cost')
@@ -133,20 +175,25 @@ class Warehousemap:
             except nx.NetworkXNoPath:
                 pass
 
-        agv_path = [coord3d_orig]
+        # Identify the nodes where the agv needs rotation
+        agv_path = []
         i = 1
-        while i<len(shortest_path)-1:
+        while i < len(shortest_path) - 1:
             x, y, z_1 = self.node_to_coord3d(shortest_path[i])
-            _, _, z_2 = self.node_to_coord3d(shortest_path[i+1])
-            if z_1 != (z_2+2) % 4:
+            _, _, z_2 = self.node_to_coord3d(shortest_path[i + 1])
+            if z_1 != (z_2 + 2) % 4:
                 agv_path.append((x, y, z_1))
             i += 1
-
-        dest_of_path = self.node_to_coord3d(shortest_path[-3])
-        if (dest_of_path[0]!=agv_path[-1][0]) | (dest_of_path[1]!=agv_path[-1][1]):
-            agv_path.append(dest_of_path)
+        # If the agv needs to load/unload at the destination, the path do not need to include the last few dummy nodes.
+        if end_at_station:
+            dest_of_path = self.node_to_coord3d(shortest_path[-3])
+            if (dest_of_path[0] != agv_path[-1][0]) | (dest_of_path[1] != agv_path[-1][1]):
+                agv_path.append(dest_of_path)
+        else:
+            agv_path.append(self.node_to_coord3d(shortest_path[-1]))
         return agv_path
 
+    # Find the route for each agv according to the assigned packages
     def route_planning(self):
         for agv in self.list_agv:
             loc_start = agv.loc
@@ -156,21 +203,54 @@ class Warehousemap:
                 loc_start = agv.paths[-1][-1]
                 agv.actions = agv.actions + ['loading', 'unloading']
 
-    def next_step(self):
-        for agv in self.list_agv:
-            agv.next_step()
+    def is_loop_blocked(self, loc, dir, mat_blocked):
+        heading = dir
+        next_loc = (loc[0]+heading[0], loc[1]+heading[1])
+        is_blocked = 0
+        for i in range(3):
+            try:
+                is_blocked = is_blocked + mat_blocked[next_loc]
+                tmp = self.mat_patch[next_loc].direction
+                heading = (tmp[0] - heading[0], tmp[1] - heading[1])
+                next_loc = (next_loc[0]+heading[0], next_loc[1]+heading[1])
+            except IndexError:
+                pass
+        return is_blocked==3
 
+    def next_step(self):
+        print(f'============== Time t={self.t} ==============')
+        mat_blocked = np.zeros((self.height, self.width), dtype=bool)
+        for ws in self.list_ws:
+            mat_blocked[ws.loc] = True
+        for ds in self.list_ds:
+            mat_blocked[ds.loc] = True
+        for agv in self.list_agv:
+            mat_blocked[self.int_loc(agv.loc[:2])] = True
+
+        for agv in self.list_agv:
+            print(agv)
+            tmp_agv = deepcopy(agv)
+            tmp_agv.next_step()
+            cur_loc = self.int_loc(agv.loc[:2])
+            next_loc = self.int_loc(tmp_agv.loc[:2])
+            if (cur_loc[0]!=next_loc[0]) & (cur_loc[1]!=next_loc[1]):
+                if mat_blocked[next_loc] | self.is_loop_blocked(next_loc, tmp_agv.heading, mat_blocked):
+                    print(f'Agv {agv.index} delays at {agv.loc}.')
+                    agv.occupied_time = 1
+                    agv.velocity = 0
+                else:
+                    mat_blocked[next_loc] = True
+            agv.next_step()
         for ws in self.list_ws:
             ws.next_step()
 
         self.t += 1
-        return
 
     def plot_warehouse(self):
-        fig_warehouse = plt.figure(figsize=(12,12))
+        fig_warehouse = plt.figure(figsize=(12, 12))
         ax = fig_warehouse.add_subplot(111)
 
-        x_ticks = np.arange(0, self.width+1, 1)
+        x_ticks = np.arange(0, self.width + 1, 1)
         y_ticks = np.arange(-self.height, 1, 1)
         ax.set_xticks(x_ticks)
         ax.set_yticks(y_ticks)
@@ -181,13 +261,14 @@ class Warehousemap:
         eps = 0.1
         for i in range(self.height):
             for j in range(self.width):
-                x, y = [j+0.5, j+eps, j+0.5, j+1-eps], [-i-eps, -i-0.5, -i-1+eps, -i-0.5]
+                x, y = [j + 0.5, j + eps, j + 0.5, j + 1 - eps], [-i - eps, -i - 0.5, -i - 1 + eps, -i - 0.5]
 
-                id1, id2 = np.where(self.mat_patch[i,j].dist<np.inf)
+                id1, id2 = np.where(self.mat_patch[i, j].dist < np.inf)
                 for k in range(len(id1)):
-                    if id1[k]!=id2[k]:
-                        ax.arrow(x[id1[k]], y[id1[k]], x[id2[k]]-x[id1[k]], y[id2[k]]-y[id1[k]],
-                                 width=0.05,edgecolor='none',alpha=self.mat_patch[i,j].dist[id1[k],id2[k]]/5+0.1)
+                    if id1[k] != id2[k]:
+                        ax.arrow(x[id1[k]], y[id1[k]], x[id2[k]] - x[id1[k]], y[id2[k]] - y[id1[k]],
+                                 width=0.05, edgecolor='none',
+                                 alpha=self.mat_patch[i, j].dist[id1[k], id2[k]] / 5 + 0.1)
 
         ax.set_xlim(0, self.width)
         ax.set_ylim(-self.height, 0)
