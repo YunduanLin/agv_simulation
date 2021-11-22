@@ -57,5 +57,5 @@ class Patch:
             # connect the origin node which is not on the opposite side to this adjacent node
             tmp = np.where(self.dist[:, node] < M)[0]
             node_o = tmp[(tmp != node) & (tmp != (node + 2) % 4)]
-            
+
         self.dist[node_o, node] = 0

@@ -14,17 +14,15 @@ class Agv:
     :arg capacity (int): Tha maximum number of packages that can be loaded on agv.
 
     real-time information
-    :arg loc (tuple): Real-time location of the agv.
+    :arg loc (tuple/triple): Real-time location of the agv.
     :arg velocity (float): Real-time velocity of the agv.
     :arg heading (tuple): Real-time heading of the agv. {(0,1), (0,-1), (1,0), (-1,0)}.
     :arg state (str): Real-time state of the agv. {'idle', 'moving', 'rotating', 'loading', 'unloading', 'waiting'}
 
     :arg packages (list[Package]): List of packages loaded.
     :arg actions (list[tuple]): List of load/unload actions. Each tuple include an action (load/unload) and a package
-    :arg path (list[tuple]): List of critical points (Turning points and action points) that describe the path of agv.
-                             Typically, the velocity of agv at these points should be 0.
-
-    :arg dest (tuple): The location of current destination which is generally the first argument of path.
+    :arg paths (list[tuple]): List of paths. Each path is a sequence of turning points that describe the path of agv.\
+    :arg dest (triple): The location of current destination which is generally the first argument of path.
     :arg occupied_time (int): The pre-occupied time of an action that cannot be finished in 1 unit of time.
     '''
 
@@ -77,11 +75,9 @@ Loaded packages: {[package.index for package in self.loaded_packages] if self.lo
                 self.dest = self.path[0]
             else:
                 self.state = 'idle'
-                print(f'Agv {self.index} is idle.')
                 return
         else:
             # if agv arrives at the target destination, point to the next destination
-
             if (self.loc[0] == self.dest[0]) & (self.loc[1] == self.dest[1]):
                 self.loc = self.dest
                 self.path.pop(0)
