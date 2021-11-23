@@ -8,8 +8,6 @@ from patch import Patch
 import os
 import imageio
 
-plt.ioff()
-
 MARKER = {(0,0):'o', (0,1):'>', (0,-1):'<', (1,0):'v', (-1,0):'^'}
 
 class Warehousemap:
@@ -156,7 +154,7 @@ class Warehousemap:
         for e in self.nx_graph.edges:
             nx.set_edge_attributes(self.nx_graph, {e: {'cost': self.dist[e]}})
 
-    #
+    # find shortest path and convert to agv path
     def pathfinding(self, coord3d_orig, coord_dest, end_at_station=True):
         '''
         Find the shortest path from an original node to a destination patch and convert it to a path
@@ -271,6 +269,7 @@ class Warehousemap:
         while not completed:
             ax, fig_warehouse = self.visualization()
             fig_warehouse.savefig(f'{self.dir_path}{self.t}.png')
+            plt.close()
             self.next_step()
             completed = True
             for agv in self.list_agv:
@@ -280,7 +279,7 @@ class Warehousemap:
         images = []
         for i in range(self.t):
             images.append(imageio.imread(f'{self.dir_path}{i}.png'))
-        imageio.mimsave(f'{self.dir_path}visulization.gif', images)
+        imageio.mimsave(f'{self.dir_path}visulization.gif', images, duration=1)
 
     def visualization(self):
         ax, fig_warehouse = self.plot_warehouse()
