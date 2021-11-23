@@ -32,7 +32,7 @@ class Workstation:
         # position x and y
         self.index = index
         self.process_time = 2
-        self.buffer_capacity = 10
+        self.buffer_capacity = 2
 
         self.loc = (x, y)
         self.occupied_time = 0
@@ -60,17 +60,15 @@ class Workstation:
         Process the queues and packages
         :return:
         '''
-        assert len(self.queue) <= self.buffer_capacity
-
         if self.occupied_time > 1:
             self.occupied_time -= 1
         elif self.queue:
             self.occupied_time = self.process_time
             self.serving_package = self.queue.pop(0)
 
-
 class Dropstation:
     def __init__(self, x, y, index):
         # position x and y
         self.loc = (x, y)
         self.index = index
+        self.packages = []

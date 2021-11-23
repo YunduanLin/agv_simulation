@@ -33,6 +33,7 @@ class Agv:
         self.capacity = n
 
         self.loc = (x, y, 0)
+        self.loc_return = (x, y)
         self.velocity, self.heading = 0, (0, 0)
         self.state = 'idle'
 
@@ -68,13 +69,13 @@ Loaded packages: {[package.index for package in self.loaded_packages] if self.lo
             self.occupied_time -= 1
             return
 
-        if self.state in ['idle', 'loading', 'unloading']:
+        if self.state in ['idle', 'completed', 'loading', 'unloading']:
             if self.paths:
                 self.state = 'moving'
                 self.path = self.paths[0]
                 self.dest = self.path[0]
             else:
-                self.state = 'idle'
+                self.state = 'completed'
                 return
         else:
             # if agv arrives at the target destination, point to the next destination
@@ -97,6 +98,9 @@ Loaded packages: {[package.index for package in self.loaded_packages] if self.lo
                         self.state, package.state = 'unloading', 'completed'
                         self.occupied_time += self.unload_time - 1
                         self.loaded_packages.remove(package)
+                        package.dest.packages.append(package)
+                    elif action == 'completed':
+                        self.state = 'idle'
 
                     self.actions.pop(0)
                     self.paths.pop(0)
