@@ -5,7 +5,12 @@ from copy import deepcopy
 from agent import *
 from agv import Agv
 from patch import Patch
+import os
+import imageio
 
+plt.ioff()
+
+MARKER = {(0,0):'o', (0,1):'>', (0,-1):'<', (1,0):'v', (-1,0):'^'}
 
 class Warehousemap:
     '''
@@ -18,15 +23,15 @@ class Warehousemap:
     :arg: t (int): timer
     '''
 
-    def __init__(self, height, width, agents, packages):
+    def __init__(self, height, width, agents, packages, dir_path):
         self.height, self.width = height, width
         self.mat_patch = np.empty((self.height, self.width), dtype=object)
 
-        self.list_ws, self.list_ds, self.list_agv = [], [], []
-        self.cnt_ws, self.cnt_ds, self.cnt_agv = 0, 0, 0
-        self.cnt_package = 0
+        self.list_ws, self.list_ds, self.list_agv, self.list_package = [], [], [], []
+        self.cnt_ws, self.cnt_ds, self.cnt_agv, self.cnt_package = 0, 0, 0, 0
 
         self.t = 0
+        self.dir_path = dir_path
 
         for agent in agents:
             self.add_agent(**agent)
@@ -64,6 +69,7 @@ class Warehousemap:
         :param agv: the index of agv which this package is assigned to
         '''
         package = Package(self.list_ws[orig], self.list_ds[dest], self.cnt_package)
+        self.list_package.append(package)
         self.cnt_package += 1
         self.list_ws[orig].packages.append(package)
         if agv is not None:
@@ -176,7 +182,7 @@ class Warehousemap:
                 pass
 
         # Identify the nodes where the agv needs rotation
-        agv_path = []
+        agv_path = [coord3d_orig]
         i = 1
         while i < len(shortest_path) - 1:
             x, y, z_1 = self.node_to_coord3d(shortest_path[i])
@@ -191,7 +197,7 @@ class Warehousemap:
                 agv_path.append(dest_of_path)
         else:
             agv_path.append(self.node_to_coord3d(shortest_path[-1]))
-        return agv_path
+        return agv_path[1:]
 
     # Find the route for each agv according to the assigned packages
     def route_planning(self):
@@ -202,6 +208,8 @@ class Warehousemap:
                 agv.paths.append(self.pathfinding(agv.paths[-1][-1], package.dest.loc))
                 loc_start = agv.paths[-1][-1]
                 agv.actions = agv.actions + ['loading', 'unloading']
+            agv.paths.append(self.pathfinding(loc_start, agv.loc_return, False))
+            agv.actions.append('completed')
 
     def is_loop_blocked(self, loc, dir, mat_blocked):
         heading = dir
@@ -225,7 +233,15 @@ class Warehousemap:
         for ds in self.list_ds:
             mat_blocked[ds.loc] = True
         for agv in self.list_agv:
-            mat_blocked[self.int_loc(agv.loc[:2])] = True
+            if agv.state=='loading':
+                package = agv.loaded_packages[-1]
+                ws = package.orig
+                if not ws.queue:
+                    continue
+                if ws.queue.index(package) < ws.buffer_capacity:
+                    continue
+            if agv.state!='completed':
+                mat_blocked[self.int_loc(agv.loc[:2])] = True
 
         for agv in self.list_agv:
             print(agv)
@@ -233,7 +249,7 @@ class Warehousemap:
             tmp_agv.next_step()
             cur_loc = self.int_loc(agv.loc[:2])
             next_loc = self.int_loc(tmp_agv.loc[:2])
-            if (cur_loc[0]!=next_loc[0]) & (cur_loc[1]!=next_loc[1]):
+            if (cur_loc[0]!=next_loc[0]) | (cur_loc[1]!=next_loc[1]):
                 if mat_blocked[next_loc] | self.is_loop_blocked(next_loc, tmp_agv.heading, mat_blocked):
                     print(f'Agv {agv.index} delays at {agv.loc}.')
                     agv.occupied_time = 1
@@ -246,7 +262,41 @@ class Warehousemap:
 
         self.t += 1
 
-    def plot_warehouse(self):
+    def run_simulation(self):
+        is_exist = os.path.exists(self.dir_path)
+        if not is_exist:
+            os.makedirs(self.dir_path)
+
+        completed = False
+        while not completed:
+            ax, fig_warehouse = self.visualization()
+            fig_warehouse.savefig(f'{self.dir_path}{self.t}.png')
+            self.next_step()
+            completed = True
+            for agv in self.list_agv:
+                completed = completed & (agv.state=='completed')
+        print('============== CLEARED ==============')
+
+        images = []
+        for i in range(self.t):
+            images.append(imageio.imread(f'{self.dir_path}{i}.png'))
+        imageio.mimsave(f'{self.dir_path}visulization.gif', images)
+
+    def visualization(self):
+        ax, fig_warehouse = self.plot_warehouse()
+        for agv in self.list_agv:
+            x, y = agv.loc[0], agv.loc[1]
+            ax.scatter(y+0.5, -x-0.5, color='darkorange',s=2000/self.width, marker=MARKER[agv.heading], zorder=15)
+        for ws in self.list_ws:
+            x, y = ws.loc[0], ws.loc[1]
+            ax.annotate(len(ws.packages), xy=(y+0.5, -x-0.5), xytext=(y+0.45, -x-0.55), color='white', weight='bold')
+        for ds in self.list_ds:
+            x, y = ds.loc[0], ds.loc[1]
+            ax.annotate(len(ds.packages), xy=(y+0.5, -x-0.5), xytext=(y+0.45, -x-0.55), color='white', weight='bold')
+        ax.set_title(f't={self.t}')
+        return ax, fig_warehouse
+
+    def plot_warehouse(self, show_direction = True):
         fig_warehouse = plt.figure(figsize=(12, 12))
         ax = fig_warehouse.add_subplot(111)
 
@@ -258,18 +308,27 @@ class Warehousemap:
         ax.set_yticklabels([])
         ax.grid(color='gray')
 
-        eps = 0.1
-        for i in range(self.height):
-            for j in range(self.width):
-                x, y = [j + 0.5, j + eps, j + 0.5, j + 1 - eps], [-i - eps, -i - 0.5, -i - 1 + eps, -i - 0.5]
+        for ws in self.list_ws:
+            x, y = ws.loc
+            ax.fill_between([y, y+1], [-x-1, -x-1], [-x,-x], color='steelblue')
 
-                id1, id2 = np.where(self.mat_patch[i, j].dist < np.inf)
-                for k in range(len(id1)):
-                    if id1[k] != id2[k]:
-                        ax.arrow(x[id1[k]], y[id1[k]], x[id2[k]] - x[id1[k]], y[id2[k]] - y[id1[k]],
-                                 width=0.05, edgecolor='none',
-                                 alpha=self.mat_patch[i, j].dist[id1[k], id2[k]] / 5 + 0.1)
+        for ds in self.list_ds:
+            x, y = ds.loc
+            ax.fill_between([y, y+1], [-x-1, -x-1], [-x,-x], color='lightcoral')
+
+        if show_direction:
+            eps = 0.1
+            for i in range(self.height):
+                for j in range(self.width):
+                    x, y = [j + 0.5, j + eps, j + 0.5, j + 1 - eps], [-i - eps, -i - 0.5, -i - 1 + eps, -i - 0.5]
+
+                    id1, id2 = np.where(self.mat_patch[i, j].dist < np.inf)
+                    for k in range(len(id1)):
+                        if id1[k] != id2[k]:
+                            ax.arrow(x[id1[k]], y[id1[k]], x[id2[k]] - x[id1[k]], y[id2[k]] - y[id1[k]],
+                                     width=0.05, edgecolor='none', facecolor='gray',
+                                     alpha=- self.mat_patch[i, j].dist[id1[k], id2[k]] / 10 + 0.5)
 
         ax.set_xlim(0, self.width)
         ax.set_ylim(-self.height, 0)
-        return fig_warehouse
+        return ax, fig_warehouse
